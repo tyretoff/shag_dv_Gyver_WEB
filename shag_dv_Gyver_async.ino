@@ -2,6 +2,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include <Preferences.h>
+#define DRIVER_STEP_TIME 1
 #include <GyverStepper2.h>
 #include <EncButton.h>
 
@@ -16,13 +17,14 @@
 const int N = 16; //выставляется на плате драйвера (1-1-1)
 const int DIR = 12;
 const int STEP = 13;
+const int EN = 14;
 const int steps = 200; //характеристика шд, имп/об
 
 const int targetDeg = 135;      //первоначальный поворот выключателя, градусы
 const int switchPeriod = 5000;  // пауза между переключениями, мсек
 
 
-GStepper2<STEPPER2WIRE> stepper(steps* N, STEP, DIR);
+GStepper2<STEPPER2WIRE> stepper(steps* N, STEP, DIR, EN);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Button btn(33); //сюда черная кнопка подключена
 
@@ -103,6 +105,7 @@ void loop() {
   }
 
   if (countClick == 0 || countClick == 3) {
+    stepper.disable();
     display.setCursor(0, 0);
     display.clearDisplay();
     display.setTextSize(2);
@@ -119,13 +122,16 @@ void loop() {
           stepper.reverse(random(2));
           stepper.setTargetDeg(targetDeg, RELATIVE);
           currentState = MOVING_TO_FIRST_POS;
+          stepper.enable();
         }
         break;
 
       case MOVING_TO_FIRST_POS:
         if (!stepper.tick()) {
+        
           lastActionTime = millis();
           currentState = WAITING;
+          
           stepper.setTargetDeg((90 - targetDeg), RELATIVE);
           currentState = MOVING_TO_SECOND_POS;
           firstPosCounter++;
@@ -139,13 +145,14 @@ void loop() {
           display.println("");
           display.println("");
           display.setTextSize(2);
-          display.println(String(firstPosCounter));
+          display.println("  " + String(firstPosCounter));
           display.display();
         }
         break;
 
       case MOVING_TO_SECOND_POS:
         if (!stepper.tick()) {
+          stepper.disable();
           bool contact1State = digitalRead(CONTACT_PIN_1);
           bool contact2State = digitalRead(CONTACT_PIN_2);
           if (countClick == 1) {
@@ -163,6 +170,7 @@ void loop() {
           } else {
             // Остановить двигатель
             stepper.stop();
+            stepper.disable();
             // Вывести сообщение об ошибке и значение firstPosCounter
 
             display.setCursor(0, 0);
@@ -173,7 +181,7 @@ void loop() {
             display.println("");
             display.setTextSize(2);
             display.println("ERROR");
-            display.println(String(firstPosCounter));
+            display.println("  " + String(firstPosCounter));
             display.display();
             while (true) {  //бесконечный цикл
               delay(100);   // задержка для уменьшения нагрузки на контроллер
