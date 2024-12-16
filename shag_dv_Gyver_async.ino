@@ -20,8 +20,9 @@ const int STEP = 13;
 const int EN = 14;
 const int steps = 200; //характеристика шд, имп/об
 
-const int targetDeg = 135;      //первоначальный поворот выключателя, градусы
-const int switchPeriod = 5000;  // пауза между переключениями, мсек
+const int targetDeg = 145;      //первоначальный поворот выключателя, градусы
+const int minSwitchPeriod = 4; // пауза между переключениями, min max, сек
+const int maxSwitchPeriod = 8;  // 
 
 
 GStepper2<STEPPER2WIRE> stepper(steps* N, STEP, DIR, EN);
@@ -38,6 +39,9 @@ State currentState = WAITING;
 unsigned long lastActionTime = 0;
 Preferences preferences;
 unsigned int firstPosCounter = 0;
+
+unsigned long lastDisableTime = 0; // Время, когда stepper был отключён
+bool waitingForStabilization = false; // Флаг ожидания стабилизации сигналов
 
 bool contact1StatePrev;
 bool contact2StatePrev;
@@ -118,7 +122,7 @@ void loop() {
 
     switch (currentState) {
       case WAITING:
-        if (millis() - lastActionTime > switchPeriod) {
+        if (millis() - lastActionTime > random(minSwitchPeriod, maxSwitchPeriod) * 1000) { //время между переключениями, случайно, в диапазоне
           stepper.reverse(random(2));
           stepper.setTargetDeg(targetDeg, RELATIVE);
           currentState = MOVING_TO_FIRST_POS;
@@ -151,44 +155,55 @@ void loop() {
         break;
 
       case MOVING_TO_SECOND_POS:
-        if (!stepper.tick()) {
-          stepper.disable();
-          bool contact1State = digitalRead(CONTACT_PIN_1);
-          bool contact2State = digitalRead(CONTACT_PIN_2);
-          if (countClick == 1) {
-            condition = checkContactChange2w(contact1State, contact2State, contact1StatePrev, contact2StatePrev);
-          }
-          if (countClick == 2) {
-            condition = (contact1State != contact1StatePrev && contact2State != contact2StatePrev);
-          }
-          if (condition) {
-            // Сохранение текущего состояния для следующей итерации
-            contact1StatePrev = contact1State;
-            contact2StatePrev = contact2State;
-            lastActionTime = millis();
-            currentState = WAITING;
-          } else {
-            // Остановить двигатель
-            stepper.stop();
+    if (!stepper.tick()) {
+        if (!waitingForStabilization) {
             stepper.disable();
-            // Вывести сообщение об ошибке и значение firstPosCounter
-
-            display.setCursor(0, 0);
-            display.clearDisplay();
-            display.setTextSize(1);
-            display.setTextColor(WHITE);
-            display.println(strState);
-            display.println("");
-            display.setTextSize(2);
-            display.println("ERROR");
-            display.println("  " + String(firstPosCounter));
-            display.display();
-            while (true) {  //бесконечный цикл
-              delay(100);   // задержка для уменьшения нагрузки на контроллер
-            }
-          }
+            lastDisableTime = millis(); // Сохраняем время начала паузы
+            waitingForStabilization = true; // Устанавливаем флаг ожидания
         }
-        break;
+
+        // Проверяем, прошло ли 2 секунды
+        if (waitingForStabilization && millis() - lastDisableTime >= 2000) {
+            bool contact1State = digitalRead(CONTACT_PIN_1);
+            bool contact2State = digitalRead(CONTACT_PIN_2);
+
+            if (countClick == 1) {
+                condition = checkContactChange2w(contact1State, contact2State, contact1StatePrev, contact2StatePrev);
+            }
+            if (countClick == 2) {
+                condition = (contact1State != contact1StatePrev && contact2State != contact2StatePrev);
+            }
+
+            if (condition) {
+                // Сохранение текущего состояния для следующей итерации
+                contact1StatePrev = contact1State;
+                contact2StatePrev = contact2State;
+                lastActionTime = millis();
+                currentState = WAITING;
+            } else {
+                // Остановить двигатель
+                stepper.stop();
+                stepper.disable();
+                // Вывести сообщение об ошибке и значение firstPosCounter
+
+                display.setCursor(0, 0);
+                display.clearDisplay();
+                display.setTextSize(1);
+                display.setTextColor(WHITE);
+                display.println(strState);
+                display.println("");
+                display.setTextSize(2);
+                display.println("ERROR");
+                display.println("  " + String(firstPosCounter));
+                display.display();
+                while (true) {  // бесконечный цикл
+                    delay(100);   // задержка для уменьшения нагрузки на контроллер
+                }
+            }
+            waitingForStabilization = false; // Сбрасываем флаг ожидания
+        }
+    }
+    break;
     }
   }
 }
