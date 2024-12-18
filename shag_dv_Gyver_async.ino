@@ -21,8 +21,8 @@ const int EN = 14;
 const int steps = 200; //характеристика шд, имп/об
 
 const int targetDeg = 145;      //первоначальный поворот выключателя, градусы
-const int minSwitchPeriod = 4; // пауза между переключениями, min max, сек
-const int maxSwitchPeriod = 8;  // 
+const int minSwitchPeriod = 2; // пауза между переключениями, min max, сек
+const int maxSwitchPeriod = 5;  // 
 
 
 GStepper2<STEPPER2WIRE> stepper(steps* N, STEP, DIR, EN);
@@ -178,7 +178,7 @@ void loop() {
                 // Сохранение текущего состояния для следующей итерации
                 contact1StatePrev = contact1State;
                 contact2StatePrev = contact2State;
-                lastActionTime = millis();
+                lastActionTime = millis();   // вот почему добавляется время стабилизации к времени между переключениями. Исправлять ( переносить после !stepper.tick())не буду, уменьшу диапазон рандома на время стабилизации
                 currentState = WAITING;
             } else {
                 // Остановить двигатель
