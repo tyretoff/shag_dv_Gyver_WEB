@@ -21,7 +21,7 @@ const int EN = 14;
 const int steps = 200; //характеристика шд, имп/об
 
 const int targetDeg = 145;      //первоначальный поворот выключателя, градусы
-const int minSwitchPeriod = 2; // пауза между переключениями, min max, сек
+const int minSwitchPeriod = 2; // пауза между переключениями, min max, сек, учесть, к ним добавляется еще время стабилизации сигнала обратной связи, 2 сек
 const int maxSwitchPeriod = 5;  // 
 
 
