@@ -1,6 +1,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
+#include "ZMPT101B.h"
 #include <Preferences.h>
 #define DRIVER_STEP_TIME 1
 #include <GyverStepper2.h>
@@ -24,7 +25,9 @@ const int targetDeg = 145;      //первоначальный поворот в
 const int minSwitchPeriod = 2; // пауза между переключениями, min max, сек, учесть, к ним добавляется еще время стабилизации сигнала обратной связи, 2 сек
 const int maxSwitchPeriod = 5;  // 
 
+const float thresholdVoltage = 150.0; // Пороговое значение напряжения в В
 
+ZMPT101B voltageSensor(32); // D32
 GStepper2<STEPPER2WIRE> stepper(steps* N, STEP, DIR, EN);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Button btn(33); //сюда черная кнопка подключена
@@ -45,9 +48,13 @@ bool waitingForStabilization = false; // Флаг ожидания стабил�
 
 bool contact1StatePrev;
 bool contact2StatePrev;
+bool UPrev;
 bool condition;
 int countClick = 0;
 String strState = "Lindas";
+
+//float U = 0;
+
 
 // Проверка изменения состояния контактов 00-10-11-01 для двухклавишного выключателя
 bool checkContactChange2w(bool contact1State, bool contact2State, bool contact1StatePrev, bool contact2StatePrev) {
@@ -59,6 +66,11 @@ bool checkContactChange2w(bool contact1State, bool contact2State, bool contact1S
   return false;
 }
 
+bool isVoltageAboveThreshold(float threshold) {
+  float voltage = voltageSensor.getVoltageAC() - 22; // Считывание напряжения
+  return voltage > threshold;                   // Сравнение с порогом
+}
+
 
 void setup() {
   Serial.begin(115200);
@@ -66,9 +78,14 @@ void setup() {
   pinMode(DIR, OUTPUT);
   pinMode(CONTACT_PIN_1, INPUT);
   pinMode(CONTACT_PIN_2, INPUT);
+  voltageSensor.setSensitivity(0.001);
+  //0.00255
+  voltageSensor.setZeroPoint(2590);
+ // voltageSensor.calibrate();
 
   contact1StatePrev = digitalRead(CONTACT_PIN_1);  // Предыдущее состояние контакта 1
   contact2StatePrev = digitalRead(CONTACT_PIN_2);  // Предыдущее состояние контакта 2
+  UPrev = isVoltageAboveThreshold(thresholdVoltage);// Предыдущее состояние датчика напряжения
 
   randomSeed(analogRead(36));
 
@@ -97,7 +114,7 @@ void loop() {
     countClick = btn.getClicks();
   }
   if (btn.hold()) {
-    countClick = 3;
+    countClick = 4;
   }
   switch (countClick) {
     case 1:
@@ -106,9 +123,12 @@ void loop() {
     case 2:
       strState = "Lindas sw-proh test";
       break;
+    case 3:
+      strState = "Lindas byU test";
+      break;    
   }
 
-  if (countClick == 0 || countClick == 3) {
+  if (countClick == 0 || countClick == 4) {
     stepper.disable();
     display.setCursor(0, 0);
     display.clearDisplay();
@@ -166,6 +186,7 @@ void loop() {
         if (waitingForStabilization && millis() - lastDisableTime >= 2000) {
             bool contact1State = digitalRead(CONTACT_PIN_1);
             bool contact2State = digitalRead(CONTACT_PIN_2);
+            bool uState = isVoltageAboveThreshold(thresholdVoltage);
 
             if (countClick == 1) {
                 condition = checkContactChange2w(contact1State, contact2State, contact1StatePrev, contact2StatePrev);
@@ -173,11 +194,16 @@ void loop() {
             if (countClick == 2) {
                 condition = (contact1State != contact1StatePrev && contact2State != contact2StatePrev);
             }
+            if (countClick == 3) {
+                condition = (uState != UPrev);
+            }
 
             if (condition) {
                 // Сохранение текущего состояния для следующей итерации
                 contact1StatePrev = contact1State;
                 contact2StatePrev = contact2State;
+                UPrev = uState;
+
                 lastActionTime = millis();   // вот почему добавляется время стабилизации к времени между переключениями. Исправлять ( переносить после !stepper.tick())не буду, уменьшу диапазон рандома на время стабилизации
                 currentState = WAITING;
             } else {
