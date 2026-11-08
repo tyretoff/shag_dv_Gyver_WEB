@@ -47,6 +47,16 @@ State currentState = WAITING_FOR_ACTION;
 unsigned long lastActionTime = 0;
 Preferences preferences;
 unsigned int firstPosCounter = 0;
+unsigned int lastSavedCounter = 0;
+const unsigned int COUNTER_SAVE_INTERVAL = 200; // интервал сохранения счётчика в NVS (пачками по N циклов)
+
+void saveCounterIfNeeded() {
+  if (firstPosCounter != lastSavedCounter) {
+    preferences.putUInt("counter", firstPosCounter);
+    lastSavedCounter = firstPosCounter;
+    Serial.println("Счётчик сохранён в NVS: " + String(firstPosCounter));
+  }
+}
 
 unsigned long lastDisableTime = 0; // Время, когда stepper был отключён
 bool currentDirection = false; // Текущее направление движения
@@ -224,6 +234,7 @@ void handleSetMode() {
   
   if (server.hasArg("counter")) {
     firstPosCounter = server.arg("counter").toInt();
+    lastSavedCounter = firstPosCounter;
     preferences.putUInt("counter", firstPosCounter);
   }
   
@@ -271,6 +282,7 @@ void setup() {
 
   preferences.begin("stepper", false);
   firstPosCounter = preferences.getUInt("counter", 0);
+  lastSavedCounter = firstPosCounter;
   testMode = preferences.getInt("testMode", 0);
   dirMode = preferences.getInt("dirMode", 2);
   targetDeg = preferences.getInt("targetDeg", 145);
@@ -297,6 +309,7 @@ void setup() {
   // Проверяем состояние кнопки сброса при старте
   if (!digitalRead(BUTTON_PIN)) {
     firstPosCounter = 0;
+    lastSavedCounter = 0;
     preferences.putUInt("counter", firstPosCounter);
     Serial.println("Счетчик сброшен");
   }
@@ -337,6 +350,7 @@ void loop() {
             if (!isRunning) {
               stepper.stop();
               stepper.disable();
+              saveCounterIfNeeded();
               display.clearDisplay();
               display.setCursor(0, 10);
               display.setTextSize(1);
@@ -418,6 +432,7 @@ void loop() {
       // Отключаем шаговик при входе в настройки
       isRunning = false;
       stepper.disable();
+      saveCounterIfNeeded();
     }
   }
 
@@ -493,7 +508,9 @@ void loop() {
                 contact2StatePrev = contact2State;
                 
                 firstPosCounter++;
-                preferences.putUInt("counter", firstPosCounter);
+                if (firstPosCounter - lastSavedCounter >= COUNTER_SAVE_INTERVAL) {
+                    saveCounterIfNeeded();
+                }
                 Serial.println("Клац №" + String(firstPosCounter));
                 display.setCursor(0, 10);
                 display.clearDisplay();
@@ -511,6 +528,7 @@ void loop() {
                 stepper.stop();
                 stepper.disable();
                 isRunning = false;
+                saveCounterIfNeeded();
                 
                 display.setCursor(0, 10);
                 display.clearDisplay();
